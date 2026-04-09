@@ -39,7 +39,7 @@ import threading
 import sounddevice as sd
 import ollama
 
-from config  import PIPER_EXE, PIPER_VOICE, OLLAMA_MODEL, USERNAME
+from config  import PIPER_EXE, PIPER_VOICE, USERNAME
 from browser import BRAVE_EXE
 from tts     import Speaker, get_stop_event, reset_stop_event
 from stt     import Listener

@@ -6,12 +6,11 @@ Konversationsgedaechtnis (JSON).
 import os
 import json
 import base64
-import time
 import datetime
 
 import ollama
 
-from config import OLLAMA_MODEL, MEMORY_FILE, USERNAME
+from config import OLLAMA_MODEL, MEMORY_FILE
 
 
 # ============================================================
@@ -50,7 +49,7 @@ def _take_screenshot(path: str) -> bool:
             f"$bmp.Save('{path}');"
             "$g.Dispose(); $bmp.Dispose()"
         )
-        r = subprocess.run(
+        subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_script],
             capture_output=True, timeout=15
         )
@@ -214,7 +213,8 @@ def _load_memory():
 
 
 def _save_memory(data):
-    os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
+    mem_dir = os.path.dirname(os.path.abspath(MEMORY_FILE))
+    os.makedirs(mem_dir, exist_ok=True)
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 

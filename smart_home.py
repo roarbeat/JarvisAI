@@ -28,8 +28,8 @@ def control_smart_home(device_name, action_state):
         # Menschliche Sprache -> HA-Begriffe
         such_begriff = such_begriff.replace("heizung", "thermostat")
 
-        # Umlaute glaettbügeln
-        umlaute = [("ä","a"), ("ae","a"), ("ö","o"), ("oe","o"), ("ü","u"), ("ue","u"), ("ß","ss")]
+        # Umlaute glaettbuegeln – echte Umlaute zuerst, dann Digraphen
+        umlaute = [("ä","a"), ("ö","o"), ("ü","u"), ("ß","ss"), ("ae","a"), ("oe","o"), ("ue","u")]
         for a, b in umlaute:
             such_begriff = such_begriff.replace(a, b)
 
@@ -103,7 +103,7 @@ def control_smart_home(device_name, action_state):
             if isinstance(response_body, list) else []
         )
         if entity_id not in changed_entities:
-            print(f"  [Smart Home] WARNUNG: HA hat den Befehl akzeptiert, aber der Zustand hat sich nicht geaendert!")
+            print("  [Smart Home] WARNUNG: HA hat den Befehl akzeptiert, aber der Zustand hat sich nicht geaendert!")
             return "Befehl gesendet, aber das Geraet hat nicht reagiert. Moeglicherweise ist es offline oder ausser Reichweite."
 
         return "Erledigt."

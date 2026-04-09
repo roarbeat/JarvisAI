@@ -9,7 +9,6 @@ import datetime
 import imaplib
 import email
 import email.header
-import json
 import requests
 
 from config import (
@@ -159,11 +158,12 @@ def wikipedia_search(query, lang="de"):
     except ImportError:
         # Fallback: Wikipedia API direkt
         try:
-            url = f"https://de.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
+            import urllib.parse as _urlparse
+            url = f"https://de.wikipedia.org/api/rest_v1/page/summary/{_urlparse.quote(query)}"
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
                 return r.json().get("extract", "Kein Inhalt.")[:500]
-            return f"Wikipedia-Seite nicht gefunden."
+            return "Wikipedia-Seite nicht gefunden."
         except Exception as e2:
             return f"Wikipedia-Fehler: {e2}"
     except Exception as e:

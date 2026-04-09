@@ -125,7 +125,10 @@ def execute_action(action_data):
             try:
                 from tts import set_voice_volume
                 lv = action_data.get("level", 1.0)
-                if isinstance(lv, str): lv = float(lv) / (100.0 if float(lv) > 2 else 1.0)
+                lv = float(lv)
+                # Werte > 2 werden als Prozent (0-100) interpretiert
+                if lv > 2:
+                    lv = lv / 100.0
                 return set_voice_volume(lv)
             except Exception as e:
                 return f"Fehler: {e}"

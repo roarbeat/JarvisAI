@@ -3,9 +3,7 @@ Medien-Steuerung fuer Jarvis.
 Spotify API, YouTube, App-Lautstaerke, Anruf-Stummschaltung.
 """
 import os
-import time
 import urllib.parse
-import subprocess
 
 from browser import open_in_brave
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI

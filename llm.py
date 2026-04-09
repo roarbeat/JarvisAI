@@ -174,7 +174,9 @@ def ask_llm(user_text, context=""):
             keep_alive=-1,
             options={"num_ctx": 2048, "num_gpu": 99}
         )
-        reply = r["message"]["content"]
+        reply = r.get("message", {}).get("content", "")
+        if not reply:
+            reply = "Keine Antwort vom Modell erhalten."
     except Exception as e:
         reply = f"Keine Verbindung zum Modell: {e}"
 

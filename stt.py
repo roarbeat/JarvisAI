@@ -30,11 +30,18 @@ class Listener:
         self.torch = torch
 
         print(f"  Lade Faster-Whisper '{WHISPER_MODEL_WAKE}'...")
-        self.wake_model = WhisperModel(WHISPER_MODEL_WAKE, device="cuda", compute_type="float16")
+        try:
+            self.wake_model = WhisperModel(WHISPER_MODEL_WAKE, device="cuda", compute_type="float16")
+        except Exception:
+            print("  CUDA nicht verfuegbar – nutze CPU (langsamer).")
+            self.wake_model = WhisperModel(WHISPER_MODEL_WAKE, device="cpu", compute_type="int8")
 
         if WHISPER_MODEL_CMD != WHISPER_MODEL_WAKE:
             print(f"  Lade Faster-Whisper '{WHISPER_MODEL_CMD}'...")
-            self.cmd_model = WhisperModel(WHISPER_MODEL_CMD, device="cuda", compute_type="float16")
+            try:
+                self.cmd_model = WhisperModel(WHISPER_MODEL_CMD, device="cuda", compute_type="float16")
+            except Exception:
+                self.cmd_model = WhisperModel(WHISPER_MODEL_CMD, device="cpu", compute_type="int8")
         else:
             self.cmd_model = self.wake_model
 

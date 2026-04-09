@@ -2,7 +2,6 @@
 PC-Steuerung fuer Jarvis.
 Maus, Fenster, Clipboard, Scroll, Multi-Monitor, Taskleisten-Pinning.
 """
-import os
 import time
 import subprocess
 

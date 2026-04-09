@@ -79,4 +79,19 @@ def get_weather(city):
         return ans
 
     except Exception:
-        return "Entschuldigung, ich konnte die detaillierten Wetterdaten gerade nicht abrufen."
+        # Fallback: open-meteo API mit Geocoding
+        try:
+            city_safe = urllib.parse.quote(city)
+            geo_url = (
+                f"https://geocoding-api.open-meteo.com/v1/search"
+                f"?name={city_safe}&count=1&language=de&format=json"
+            )
+            geo_data = json.loads(urllib.request.urlopen(geo_url, timeout=5).read())
+            results = geo_data.get("results")
+            if results:
+                lat = results[0]["latitude"]
+                lon = results[0]["longitude"]
+                return _fetch_weather(lat, lon, city)
+        except Exception:
+            pass
+        return "Entschuldigung, ich konnte die Wetterdaten gerade nicht abrufen."

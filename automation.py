@@ -72,6 +72,8 @@ def set_timer(seconds=None, minutes=None, hours=None, label="Timer"):
             time.sleep(total_s)
             _speak(f"{label} abgelaufen! {readable} sind um.")
 
+        # Abgelaufene Timer aus der Liste entfernen
+        _active_timers[:] = [th for th in _active_timers if th.is_alive()]
         t = threading.Thread(target=_fire, daemon=True, name=f"timer_{label}")
         _active_timers.append(t)
         t.start()
@@ -95,6 +97,7 @@ def set_alarm(hour, minute=0, label="Wecker"):
             time.sleep(delta_s)
             _speak(f"Guten Morgen, {USERNAME}! Es ist {time_str} Uhr – dein {label} klingelt.")
 
+        _active_timers[:] = [th for th in _active_timers if th.is_alive()]
         t = threading.Thread(target=_fire, daemon=True, name=f"alarm_{time_str}")
         _active_timers.append(t)
         t.start()
@@ -113,6 +116,7 @@ def remind_me(text, minutes=0, seconds=0, hours=0):
         time.sleep(total_s)
         _speak(f"Erinnerung: {text}")
 
+    _active_timers[:] = [th for th in _active_timers if th.is_alive()]
     t = threading.Thread(target=_fire, daemon=True, name="reminder")
     _active_timers.append(t)
     t.start()
@@ -236,7 +240,7 @@ def night_mode(enable=True):
 
 def _inactivity_watcher():
     """Hintergrund-Thread: sperrt PC nach Inaktivitaet."""
-    global _inactivity_enabled, _last_activity_time
+    global _last_activity_time
     while _inactivity_enabled:
         time.sleep(30)
         if not _inactivity_enabled:
