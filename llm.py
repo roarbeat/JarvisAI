@@ -162,13 +162,25 @@ def check_model_available():
     """Prueft ob OLLAMA_MODEL in Ollama installiert ist. Gibt Fehlermeldung oder None zurueck."""
     try:
         models = ollama.list()
-        # ollama.list() gibt ein dict mit 'models'-Liste zurueck
+        # Ollama >=0.2.x gibt ListResponse-Objekte zurueck, keine dicts.
+        # Bracket-Zugriff und Attribut-Zugriff als Fallback.
+        try:
+            model_list = models["models"]
+        except (TypeError, KeyError, AttributeError):
+            model_list = getattr(models, "models", [])
+        if model_list is None:
+            model_list = []
+
         model_names = []
-        for m in models.get("models", []):
+        for m in model_list:
             # Normalisierung: "gemma2:9b" und "gemma2" sind beide gueltig
-            name = m.get("name", "") or m.get("model", "")
-            model_names.append(name)
-            model_names.append(name.split(":")[0])   # ohne Tag
+            if isinstance(m, dict):
+                name = m.get("name", "") or m.get("model", "")
+            else:
+                name = getattr(m, "model", "") or getattr(m, "name", "")
+            if name:
+                model_names.append(name)
+                model_names.append(name.split(":")[0])   # ohne Tag
         if OLLAMA_MODEL not in model_names and OLLAMA_MODEL.split(":")[0] not in model_names:
             available = ", ".join(sorted(set(n for n in model_names if n)))
             return (
@@ -197,7 +209,16 @@ def ask_llm(user_text, context=""):
             keep_alive=-1,
             options={"num_ctx": 2048, "num_gpu": 99}
         )
-        reply = r.get("message", {}).get("content", "")
+        # Ollama >=0.2.x gibt ChatResponse-Objekte zurueck (kein dict).
+        # Bracket-Zugriff funktioniert bei BEIDEN Varianten.
+        try:
+            reply = r["message"]["content"]
+        except (TypeError, KeyError, AttributeError):
+            # Fallback: Attribut-Zugriff (neuere API)
+            try:
+                reply = r.message.content
+            except Exception:
+                reply = ""
         if not reply:
             reply = "Keine Antwort vom Modell erhalten."
     except Exception as e:
