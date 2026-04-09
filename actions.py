@@ -40,9 +40,49 @@ def web_search(query):
     return f"Suche nach '{query}' geoeffnet."
 
 
+# Aliase fuer haeufige Modell-Halluzinationen
+_ACTION_ALIASES = {
+    "control_device":    "control_home",
+    "smart_home":        "control_home",
+    "toggle_device":     "control_home",
+    "set_device":        "control_home",
+    "home_control":      "control_home",
+    "light":             "control_home",
+    "light_control":     "control_home",
+    "open_browser":      "open_app",
+    "launch_app":        "open_app",
+    "start_app":         "open_app",
+    "play_spotify":      "spotify",
+    "play_music":        "spotify",
+    "search_web":        "web_search",
+    "google":            "web_search",
+    "timer":             "set_timer",
+    "alarm":             "set_alarm",
+    "reminder":          "remind_me",
+    "weather":           "get_weather",
+    "wetter":            "get_weather",
+    "note":              "save_note",
+    "calc":              "calculate",
+    "rechne":            "calculate",
+    "wiki":              "wikipedia",
+    "open_url":          "open_website",
+    "navigate":          "open_website",
+    "volume":            "set_volume",
+    "brightness":        "set_brightness",
+    "mute":              "volume_mute",
+    "pause":             "media_key",
+    "play":              "media_key",
+    "next_track":        "media_key",
+    "prev_track":        "media_key",
+}
+
+
 def execute_action(action_data):
     """Fuehrt eine Aktion aus. Jeder Block faengt Fehler einzeln ab."""
     a = action_data.get("action", "none")
+    # Alias-Mapping: haeufige Modell-Halluzinationen korrigieren
+    a = _ACTION_ALIASES.get(a, a)
+    action_data["action"] = a
 
     try:
 
@@ -240,7 +280,18 @@ def execute_action(action_data):
             return o.stdout[:200] or "Ausgefuehrt."
 
         elif a == "control_home":
-            return control_smart_home(action_data.get("device",""), action_data.get("state","on"))
+            # Modell nutzt manchmal "entity", "name", "device_name" statt "device"
+            device = (action_data.get("device")
+                      or action_data.get("entity")
+                      or action_data.get("name")
+                      or action_data.get("device_name", ""))
+            state = action_data.get("state", "on")
+            # "aus"/"an" normalisieren
+            if state in ("aus", "off", "false", "0"):
+                state = "off"
+            else:
+                state = "on"
+            return control_smart_home(device, state)
 
         # ============================================================
         #  PC-STEUERUNG

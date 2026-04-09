@@ -209,19 +209,66 @@ def ask_llm(user_text, context=""):
             keep_alive=-1,
             options={"num_ctx": 2048, "num_gpu": 99}
         )
-        # Ollama >=0.2.x gibt ChatResponse-Objekte zurueck (kein dict).
-        # Bracket-Zugriff funktioniert bei BEIDEN Varianten.
-        try:
-            reply = r["message"]["content"]
-        except (TypeError, KeyError, AttributeError):
-            # Fallback: Attribut-Zugriff (neuere API)
-            try:
-                reply = r.message.content
-            except Exception:
-                reply = ""
+        # Debug: zeige Typ und Inhalt der Antwort
+        print(f"  [DEBUG] Antwort-Typ: {type(r).__name__}")
+
+        # Robust: alle moeglichen Zugriffswege versuchen
+        reply = ""
+
+        # Weg 1: Attribut-Zugriff (ollama >=0.3.x ChatResponse)
         if not reply:
+            try:
+                reply = r.message.content or ""
+                if reply:
+                    print(f"  [DEBUG] Reply via r.message.content OK ({len(reply)} Zeichen)")
+            except Exception:
+                pass
+
+        # Weg 2: Bracket-Zugriff (aeltere ollama / dict-Antwort)
+        if not reply:
+            try:
+                reply = r["message"]["content"] or ""
+                if reply:
+                    print(f"  [DEBUG] Reply via r['message']['content'] OK ({len(reply)} Zeichen)")
+            except Exception:
+                pass
+
+        # Weg 3: dict()-Konvertierung
+        if not reply:
+            try:
+                d = dict(r) if not isinstance(r, dict) else r
+                reply = d.get("message", {})
+                if hasattr(reply, "content"):
+                    reply = reply.content or ""
+                elif isinstance(reply, dict):
+                    reply = reply.get("content", "")
+                else:
+                    reply = str(reply) if reply else ""
+                if reply:
+                    print(f"  [DEBUG] Reply via dict-Konvertierung OK ({len(reply)} Zeichen)")
+            except Exception:
+                pass
+
+        # Weg 4: str()-Fallback - rohen Response parsen
+        if not reply:
+            try:
+                raw = str(r)
+                print(f"  [DEBUG] Raw response: {raw[:300]}")
+                # Versuche content aus dem String zu extrahieren
+                import ast
+                d = ast.literal_eval(raw) if raw.startswith("{") else None
+                if d and isinstance(d, dict):
+                    reply = d.get("message", {}).get("content", "")
+            except Exception:
+                pass
+
+        if not reply:
+            print(f"  [DEBUG] ALLE Zugriffswege fehlgeschlagen! type={type(r)}, repr={repr(r)[:500]}")
             reply = "Keine Antwort vom Modell erhalten."
     except Exception as e:
+        import traceback
+        print(f"  [DEBUG] LLM Exception: {e}")
+        traceback.print_exc()
         reply = f"Keine Verbindung zum Modell: {e}"
 
     conversation_history.append({"role": "assistant", "content": reply})

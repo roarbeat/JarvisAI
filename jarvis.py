@@ -127,6 +127,7 @@ def _process_command(command: str, speaker: Speaker, listener: Listener) -> bool
     t_start  = time.time()
     speak, action = ask_llm(command)
     print(f"  [Zeit] KI-Antwort: {time.time() - t_start:.2f}s")
+    print(f"  [DEBUG] speak='{speak[:100]}' action={action}")
 
     act = action.get("action", "") if action else ""
 
