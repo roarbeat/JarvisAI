@@ -74,7 +74,9 @@ def set_timer(seconds=None, minutes=None, hours=None, label="Timer"):
 
         # Abgelaufene Timer aus der Liste entfernen
         _active_timers[:] = [th for th in _active_timers if th.is_alive()]
-        t = threading.Thread(target=_fire, daemon=True, name=f"timer_{label}")
+        # daemon=False: Timer soll auch dann feuern wenn der Hauptthread gerade
+        # im LLM/TTS blockiert ist. (auto_lock bleibt daemon=True da nur Hilfsfunktion)
+        t = threading.Thread(target=_fire, daemon=False, name=f"timer_{label}")
         _active_timers.append(t)
         t.start()
         return f"Timer fuer {readable} gestartet."
@@ -98,7 +100,7 @@ def set_alarm(hour, minute=0, label="Wecker"):
             _speak(f"Guten Morgen, {USERNAME}! Es ist {time_str} Uhr – dein {label} klingelt.")
 
         _active_timers[:] = [th for th in _active_timers if th.is_alive()]
-        t = threading.Thread(target=_fire, daemon=True, name=f"alarm_{time_str}")
+        t = threading.Thread(target=_fire, daemon=False, name=f"alarm_{time_str}")
         _active_timers.append(t)
         t.start()
         return f"Wecker fuer {time_str} Uhr gestellt."
@@ -117,7 +119,7 @@ def remind_me(text, minutes=0, seconds=0, hours=0):
         _speak(f"Erinnerung: {text}")
 
     _active_timers[:] = [th for th in _active_timers if th.is_alive()]
-    t = threading.Thread(target=_fire, daemon=True, name="reminder")
+    t = threading.Thread(target=_fire, daemon=False, name="reminder")
     _active_timers.append(t)
     t.start()
     m, s = divmod(total_s, 60)

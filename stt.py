@@ -97,17 +97,37 @@ class Listener:
         sd.wait()
         return a.flatten()
 
-    def _transcribe(self, audio, model):
-        """Transkription – nur Deutsch. Thread-safe durch Lock."""
+    def _transcribe(self, audio, model, is_wake=False):
+        """Transkription – nur Deutsch. Thread-safe durch Lock.
+
+        is_wake=True:
+          - Kein initial_prompt (vermeidet Germanisierung von "Jarvis")
+          - speech_pad_ms erhoehen damit kurze Woerter nicht abgeschnitten werden
+        """
         with _whisper_lock:
-            segments, _ = model.transcribe(
-                audio,
-                language="de",
-                beam_size=5,
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=400),
-                initial_prompt="Sprachbefehle auf Deutsch."
-            )
+            if is_wake:
+                # Fuer Wake-Word: kein Deutsch-Prompt, damit "Jarvis" (englisch)
+                # nicht als deutsches Wort transkribiert wird.
+                # speech_pad_ms=500 verhindert Abschneiden kurzer Einzel-Woerter.
+                segments, _ = model.transcribe(
+                    audio,
+                    language="de",
+                    beam_size=5,
+                    vad_filter=True,
+                    vad_parameters=dict(
+                        min_silence_duration_ms=300,
+                        speech_pad_ms=500,
+                    ),
+                )
+            else:
+                segments, _ = model.transcribe(
+                    audio,
+                    language="de",
+                    beam_size=5,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=400),
+                    initial_prompt="Sprachbefehle auf Deutsch.",
+                )
             return "".join([segment.text for segment in segments]).strip()
 
     def listen_for_wake_word(self):
@@ -122,11 +142,16 @@ class Listener:
         while True:
             a = self._record_chunk(WAKE_RECORD_SECONDS)
             # Mindestpegel pruefen (sehr leise = ignorieren)
-            if np.abs(a).mean() * 32768 < 5:
+            # Schwellwert angehoben: < 8 filtert echtes Stille-Rauschen zuverlaessiger
+            if np.abs(a).mean() * 32768 < 8:
                 continue
-            t = self._transcribe(a, self.wake_model).lower()
-            if t and len(t) > 2 and not all(c in ".-!?, " for c in t):
+            # is_wake=True: kein Deutsch-Prompt, speech_pad_ms aktiv
+            t = self._transcribe(a, self.wake_model, is_wake=True).lower()
+            # Immer ausgeben damit Debugging moeglich ist (auch leere Strings)
+            if t:
                 print(f"  [hoert]: \"{t}\"")
+            else:
+                print("  [hoert]: (leer – Mikrofon zu leise oder falsches Geraet?)")
             if any(w in t for w in varianten):
                 return a
 
@@ -181,8 +206,9 @@ class Listener:
     def listen_command(self, wake_audio=None):
         """Nimmt den Befehl nach dem Wake-Word auf – laenger und geduldiger."""
         # Pruefen ob der Befehl schon im Wake-Chunk steckt
+        # (is_wake=False: normaler Befehlsmodus mit Deutsch-Prompt)
         if wake_audio is not None:
-            cmd_inline = self._transcribe(wake_audio, self.cmd_model)
+            cmd_inline = self._transcribe(wake_audio, self.cmd_model, is_wake=False)
             for w in ["jarvis", "jarwis", "garvis"]:
                 cmd_inline = re.sub(rf"\b{w}\b[,.]?\s*", "", cmd_inline, flags=re.IGNORECASE).strip()
             cmd_inline = cmd_inline.strip("., !?").strip()

@@ -44,7 +44,7 @@ from browser import BRAVE_EXE
 from tts     import Speaker, get_stop_event, reset_stop_event
 from stt     import Listener
 from actions import execute_action
-from llm     import ask_llm
+from llm     import ask_llm, check_model_available
 import automation
 
 
@@ -208,6 +208,11 @@ def main():
         sd.query_devices(kind="input")
     except Exception:
         errors.append("Kein Mikrofon gefunden")
+
+    # Ollama-Modell-Check (am wichtigsten: prueft ob das konfigurierte Modell existiert)
+    model_err = check_model_available()
+    if model_err:
+        errors.append(model_err)
 
     if errors:
         for e in errors:

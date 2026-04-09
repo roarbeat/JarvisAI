@@ -96,15 +96,25 @@ def control_smart_home(device_name, action_state):
         )
 
         with urllib.request.urlopen(post_req, timeout=5) as post_res:
+            status_code   = post_res.getcode()
             response_body = json.loads(post_res.read().decode("utf-8"))
+
+        # HA gibt HTTP 200/207 zurueck wenn der Service-Call angenommen wurde.
+        # Die Response-Liste enthaelt nur Entities deren Zustand sich GEAENDERT hat –
+        # wenn das Geraet bereits im Zielzustand war, ist die Liste leer, der Befehl
+        # aber trotzdem erfolgreich. Daher HTTP-Status pruefen, NICHT entity_id-Vergleich.
+        if status_code not in (200, 207):
+            print("  [Smart Home] WARNUNG: HA hat den Befehl abgelehnt!")
+            return "Befehl wurde von Home Assistant abgelehnt. Bitte Token und URL pruefen."
 
         changed_entities = (
             [s.get("entity_id", "") for s in response_body]
             if isinstance(response_body, list) else []
         )
-        if entity_id not in changed_entities:
-            print("  [Smart Home] WARNUNG: HA hat den Befehl akzeptiert, aber der Zustand hat sich nicht geaendert!")
-            return "Befehl gesendet, aber das Geraet hat nicht reagiert. Moeglicherweise ist es offline oder ausser Reichweite."
+        if changed_entities:
+            print(f"  [Smart Home] Zustand geaendert: {changed_entities}")
+        else:
+            print("  [Smart Home] Befehl angenommen (Zustand war moeglicherweise bereits korrekt).")
 
         return "Erledigt."
 

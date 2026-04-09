@@ -158,6 +158,29 @@ set_wake_sensitivity:{{"action":"set_wake_sensitivity","level":0.25}}
 conversation_history = []
 
 
+def check_model_available():
+    """Prueft ob OLLAMA_MODEL in Ollama installiert ist. Gibt Fehlermeldung oder None zurueck."""
+    try:
+        models = ollama.list()
+        # ollama.list() gibt ein dict mit 'models'-Liste zurueck
+        model_names = []
+        for m in models.get("models", []):
+            # Normalisierung: "gemma2:9b" und "gemma2" sind beide gueltig
+            name = m.get("name", "") or m.get("model", "")
+            model_names.append(name)
+            model_names.append(name.split(":")[0])   # ohne Tag
+        if OLLAMA_MODEL not in model_names and OLLAMA_MODEL.split(":")[0] not in model_names:
+            available = ", ".join(sorted(set(n for n in model_names if n)))
+            return (
+                f"Modell '{OLLAMA_MODEL}' nicht gefunden!\n"
+                f"  Installierte Modelle: {available or 'keine'}\n"
+                f"  Tipp: 'ollama pull {OLLAMA_MODEL}' oder OLLAMA_MODEL in config.py anpassen."
+            )
+        return None
+    except Exception as e:
+        return f"Ollama-Verbindungsfehler: {e}"
+
+
 def ask_llm(user_text, context=""):
     """Sendet user_text an das LLM und gibt (sprechbarer Text, Aktion|None) zurueck."""
     global conversation_history
