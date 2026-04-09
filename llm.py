@@ -207,7 +207,7 @@ def ask_llm(user_text, context=""):
             model=OLLAMA_MODEL,
             messages=[{"role": "system", "content": SYSTEM_PROMPT}] + conversation_history,
             keep_alive=-1,
-            options={"num_ctx": 2048, "num_gpu": 99}
+            options={"num_ctx": 8192, "num_gpu": 99}
         )
         # Debug: zeige Typ und Inhalt der Antwort
         print(f"  [DEBUG] Antwort-Typ: {type(r).__name__}")

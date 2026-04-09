@@ -90,21 +90,25 @@ def execute_action(action_data):
         #  APPS & WEB
         # ============================================================
         if a == "open_app":
-            return open_app(action_data.get("app_name", ""))
+            # Modell nutzt manchmal "app" statt "app_name"
+            app = action_data.get("app_name") or action_data.get("app") or action_data.get("name", "")
+            return open_app(app)
 
         elif a == "close_app":
             import psutil
-            name, ok = action_data.get("app_name", "").lower(), False
+            name, ok = (action_data.get("app_name") or action_data.get("app") or action_data.get("name", "")).lower(), False
             for p in psutil.process_iter(["name"]):
                 if name in p.info["name"].lower():
                     p.terminate(); ok = True
             return f"{name} geschlossen." if ok else f"{name} laeuft nicht."
 
         elif a == "get_weather":
-            return get_weather(action_data.get("city", ""))
+            city = action_data.get("city") or action_data.get("location") or action_data.get("ort", "")
+            return get_weather(city)
 
         elif a == "web_search":
-            return web_search(action_data.get("query", ""))
+            q = action_data.get("query") or action_data.get("search_query") or action_data.get("q", "")
+            return web_search(q)
 
         elif a == "open_website":
             url = action_data.get("url", "").strip()
