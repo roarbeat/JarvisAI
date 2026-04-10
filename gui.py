@@ -528,21 +528,59 @@ class JarvisApp(ctk.CTk):
             if err:
                 self._status(f"⚠  {err[:50]}", "err")
                 self._log("Fehler", err)
-                return
+                # Trotzdem weitermachen – Text-Eingabe funktioniert noch
 
-            self._status("Lade STT-Modell...", "warn")
-            self.listener = Listener()
-
+            # ── TTS laden ──────────────────────────────────────
             self._status("Lade TTS...", "warn")
-            self.speaker = Speaker()
-            automation.set_speak_callback(self.speaker.say)
+            try:
+                self.speaker = Speaker()
+                automation.set_speak_callback(self.speaker.say)
+            except Exception as e_tts:
+                print(f"  [GUI] TTS nicht geladen: {e_tts}")
+                self._status(f"⚠  TTS-Fehler: {e_tts}", "warn")
+                self.speaker = None
 
-            self._status("● Bereit  –  sag 'Jarvis'", "ok")
-            self._add_bubble("system",
-                             f"Hallo {USERNAME}! Ich bin bereit.\n"
-                             "Sag 'Jarvis' oder tippe einen Befehl.", None, None)
+            # ── STT laden (optional – bei Fehler: nur Texteingabe) ──
+            self._status("Lade STT / VAD-Modell...", "warn")
+            stt_ok = False
+            try:
+                self.listener = Listener()
+                stt_ok = True
+            except ModuleNotFoundError as e_mod:
+                pkg = str(e_mod).replace("No module named ", "").strip("'")
+                msg = (f"Spracheingabe deaktiviert – fehlendes Paket: {pkg}\n"
+                       f"Bitte installieren: pip install {pkg}")
+                print(f"  [GUI] {msg}")
+                self._status(f"⚠  pip install {pkg}", "err")
+                self._q_ui.put(("bot_msg",
+                                f"⚠  Mikrofon nicht verfügbar.\n"
+                                f"Fehlendes Paket: {pkg}\n"
+                                f"Fix: pip install {pkg}\n\n"
+                                f"Die Texteingabe unten funktioniert trotzdem!",
+                                None, None))
+                self.listener = None
+            except Exception as e_stt:
+                print(f"  [GUI] STT nicht geladen: {e_stt}")
+                self._status(f"⚠  STT-Fehler (Texteingabe OK)", "warn")
+                self._q_ui.put(("bot_msg",
+                                f"⚠  Mikrofon nicht geladen: {e_stt}\n"
+                                f"Texteingabe funktioniert.",
+                                None, None))
+                self.listener = None
 
-            # Hauptschleife
+            # ── Begrüßung ──────────────────────────────────────
+            mode = "Sag 'Jarvis' oder tippe" if stt_ok else "Tippe einen Befehl"
+            self._status(f"● Bereit  –  {mode}", "ok")
+            if stt_ok:
+                self._q_ui.put(("bot_msg",
+                                f"Hallo {USERNAME}! Ich bin bereit.\n"
+                                "Sag 'Jarvis' oder tippe einen Befehl.",
+                                None, None))
+
+            # ── Hauptschleife (nur wenn STT verfügbar) ─────────
+            if not stt_ok:
+                return   # Texteingabe läuft über _process_inline
+
             while self._running:
                 self.orb.set_state("idle")
                 self._put_btn_state("idle")
@@ -554,7 +592,8 @@ class JarvisApp(ctk.CTk):
                 self._status("● Höre zu...", "ok")
                 self.orb.set_state("listening")
                 self._put_btn_state("listening")
-                self.speaker.say("Ja?")
+                if self.speaker:
+                    self.speaker.say("Ja?")
 
                 cmd = self.listener.listen_command()
                 if cmd:
