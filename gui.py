@@ -29,6 +29,15 @@ from stt      import Listener
 from actions  import execute_action
 import automation
 
+# Gleiche Aktions-Sets und Hilfsfunktionen wie jarvis.py importieren
+# (garantiert identisches Verhalten zwischen Terminal- und GUI-Modus)
+from jarvis import (
+    _ERGEBNIS_AKTIONEN,
+    _SOFORT_SPRECHEN,
+    _ist_stoppbefehl,
+    _ist_abbruchbefehl,
+)
+
 # ================================================================
 #  FARBPALETTE
 # ================================================================
@@ -584,20 +593,40 @@ class JarvisApp(ctk.CTk):
             while self._running:
                 self.orb.set_state("idle")
                 self._put_btn_state("idle")
-                self.listener.listen_for_wake_word()
+                self._status("● Lausche auf 'Jarvis'...", "ok")
+                wake_audio = self.listener.listen_for_wake_word()
 
                 if not self._running:
                     break
 
+                print("  Wake-Word erkannt!")
+                automation.update_activity()
                 self._status("● Höre zu...", "ok")
                 self.orb.set_state("listening")
                 self._put_btn_state("listening")
                 if self.speaker:
                     self.speaker.say("Ja?")
 
-                cmd = self.listener.listen_command()
+                # wake_audio weitergeben: inline-Befehl direkt im Wake-Chunk erkennen
+                cmd = self.listener.listen_command(wake_audio)
                 if cmd:
                     self._do_process(cmd)
+
+                # ── Folgefragen-Fenster (identisch mit jarvis.py) ──
+                followup_count = 0
+                while followup_count < 2 and self._running:
+                    follow_up = self.listener.listen_quick(timeout=4.0)
+                    if not follow_up:
+                        break
+                    print(f"  [Folgefrage]: \"{follow_up}\"")
+                    if _ist_abbruchbefehl(follow_up):
+                        if self.speaker:
+                            self.speaker.say("Gerne.")
+                        break
+                    if _ist_stoppbefehl(follow_up):
+                        break
+                    self._do_process(follow_up)
+                    followup_count += 1
 
         except Exception as exc:
             import traceback
@@ -605,34 +634,95 @@ class JarvisApp(ctk.CTk):
             self._status(f"⚠  {exc}", "err")
 
     def _do_process(self, command: str):
-        """Befehl verarbeiten (im Backend-Thread)."""
+        """Befehl verarbeiten – IDENTISCH mit jarvis.py _process_command.
+        Gleiche Aktions-Logik (_ERGEBNIS_AKTIONEN / _SOFORT_SPRECHEN),
+        gleicher Interrupt-Thread, gleiche Sprech-Reihenfolge.
+        """
         self.orb.set_state("thinking")
         self._status("● Denkt nach...", "warn")
+        self._put_btn_state("thinking")
         automation.update_activity()
 
+        # User-Nachricht in GUI zeigen
         self._q_ui.put(("user_msg", command))
 
+        # LLM-Antwort holen
         speak, action = ask_llm(command)
+        act = action.get("action", "") if action else ""
+        print(f"  [DEBUG] speak='{(speak or '')[:80]}' action={action}")
+
+        # Interrupt-Thread starten (hört auf "Jarvis stopp" während Ausgabe)
+        reset_stop_event()
+        if self.listener:
+            threading.Thread(
+                target=self.listener.listen_for_stop_word,
+                args=(get_stop_event(),),
+                daemon=True
+            ).start()
+
+        # Bot-Antwort sofort in GUI zeigen
+        self._q_ui.put(("bot_msg", speak or "…", action, None))
+
         result = None
 
-        if action:
-            result = execute_action(action)
-
-        self._q_ui.put(("bot_msg", speak, action, result))
-
-        if speak and self.speaker:
-            self.orb.set_state("speaking")
-            self._put_btn_state("speaking")
-            reset_stop_event()
-            self.speaker.say(speak)
-
-        if result and self.speaker:
-            result_str = str(result)
-            if len(result_str) < 400:
+        if act in _ERGEBNIS_AKTIONEN:
+            # Erst Intro sprechen, dann Aktion, dann Ergebnis sprechen
+            if speak and not get_stop_event().is_set() and self.speaker:
                 self.orb.set_state("speaking")
-                self.speaker.say(result_str)
+                self._put_btn_state("speaking")
+                self.speaker.say(speak)
+            if action and not get_stop_event().is_set():
+                result = execute_action(action)
+                print(f"  -> {result}")
+                if result and not get_stop_event().is_set() and self.speaker:
+                    self.orb.set_state("speaking")
+                    self.speaker.say(str(result))
+
+        elif act in _SOFORT_SPRECHEN:
+            # Erst sprechen, dann Aktion ausführen
+            if speak and not get_stop_event().is_set() and self.speaker:
+                self.orb.set_state("speaking")
+                self._put_btn_state("speaking")
+                self.speaker.say(speak)
+            if action and not get_stop_event().is_set():
+                result = execute_action(action)
+                print(f"  -> {result}")
+                if result and isinstance(result, str) and self.speaker:
+                    if any(w in result.lower() for w in
+                           ["fehler", "nicht gefunden", "konnte nicht", "error"]):
+                        self.speaker.say(result)
+
+        elif action:
+            # Sonstige Aktionen
+            if speak and not get_stop_event().is_set() and self.speaker:
+                self.orb.set_state("speaking")
+                self._put_btn_state("speaking")
+                self.speaker.say(speak)
+            result = execute_action(action)
+            print(f"  -> {result}")
+            if result and not get_stop_event().is_set() and self.speaker:
+                if any(w in str(result).lower() for w in ["fehler", "nicht", "error"]):
+                    self.speaker.say(str(result))
+
+        else:
+            # Nur Text, keine Aktion
+            if speak and not get_stop_event().is_set() and self.speaker:
+                self.orb.set_state("speaking")
+                self._put_btn_state("speaking")
+                self.speaker.say(speak)
+
+        # Ergebnis in Aktions-Log zeigen
+        if result and act:
+            self._q_status.put(("log", act, str(result)))
+
+        # Interrupt-Thread sauber beenden
+        get_stop_event().set()
+        time.sleep(0.1)
+        reset_stop_event()
 
         self._status("● Bereit  –  sag 'Jarvis'", "ok")
+        self.orb.set_state("idle")
+        self._put_btn_state("idle")
 
     def _process_inline(self, command: str):
         """Inline-Befehl (Texteingabe) im eigenen Thread."""

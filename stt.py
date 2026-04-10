@@ -24,24 +24,70 @@ VAD_THRESHOLD = WAKE_WORD_SENSITIVITY
 _whisper_lock = threading.Lock()
 
 
+def _probe_cuda():
+    """Prueft ob CUDA + cuBLAS wirklich benutzbar sind (nicht nur vorhanden).
+    Gibt (device, compute_type) zurueck.
+
+    Problem: torch.cuda.is_available() kann True liefern obwohl cuBLAS fehlt –
+    der Fehler tritt dann erst bei der ersten Inferenz auf (cublas64_12.dll not found).
+    Diese Funktion laedt die DLL direkt und faellt auf CPU zurueck wenn noetig.
+    """
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            print("  [STT] Kein CUDA-Device -> CPU/int8")
+            return "cpu", "int8"
+
+        import ctypes
+        # cuBLAS 12 wird fuer float16 benoetigt
+        for dll in ("cublas64_12.dll",):
+            try:
+                ctypes.CDLL(dll)
+                print("  [STT] CUDA + cuBLAS12 verfuegbar -> cuda/float16")
+                return "cuda", "float16"
+            except OSError:
+                pass
+
+        # cuBLAS 11: int8 moeglich, kein float16
+        for dll in ("cublas64_11.dll",):
+            try:
+                ctypes.CDLL(dll)
+                print("  [STT] CUDA + cuBLAS11 verfuegbar -> cuda/int8")
+                return "cuda", "int8"
+            except OSError:
+                pass
+
+        print("  [STT] CUDA vorhanden aber cuBLAS-DLL fehlt -> CPU/int8 Fallback")
+        return "cpu", "int8"
+    except Exception as e:
+        print(f"  [STT] CUDA-Probe fehlgeschlagen ({e}) -> CPU/int8")
+        return "cpu", "int8"
+
+
 class Listener:
     def __init__(self):
         import torch
         self.torch = torch
 
-        print(f"  Lade Faster-Whisper '{WHISPER_MODEL_WAKE}'...")
+        device, compute = _probe_cuda()
+
+        print(f"  Lade Faster-Whisper '{WHISPER_MODEL_WAKE}' ({device}/{compute})...")
         try:
-            self.wake_model = WhisperModel(WHISPER_MODEL_WAKE, device="cuda", compute_type="float16")
+            self.wake_model = WhisperModel(
+                WHISPER_MODEL_WAKE, device=device, compute_type=compute)
         except Exception:
-            print("  CUDA nicht verfuegbar – nutze CPU (langsamer).")
-            self.wake_model = WhisperModel(WHISPER_MODEL_WAKE, device="cpu", compute_type="int8")
+            print("  Fallback auf CPU/int8...")
+            self.wake_model = WhisperModel(
+                WHISPER_MODEL_WAKE, device="cpu", compute_type="int8")
 
         if WHISPER_MODEL_CMD != WHISPER_MODEL_WAKE:
-            print(f"  Lade Faster-Whisper '{WHISPER_MODEL_CMD}'...")
+            print(f"  Lade Faster-Whisper '{WHISPER_MODEL_CMD}' ({device}/{compute})...")
             try:
-                self.cmd_model = WhisperModel(WHISPER_MODEL_CMD, device="cuda", compute_type="float16")
+                self.cmd_model = WhisperModel(
+                    WHISPER_MODEL_CMD, device=device, compute_type=compute)
             except Exception:
-                self.cmd_model = WhisperModel(WHISPER_MODEL_CMD, device="cpu", compute_type="int8")
+                self.cmd_model = WhisperModel(
+                    WHISPER_MODEL_CMD, device="cpu", compute_type="int8")
         else:
             self.cmd_model = self.wake_model
 
@@ -97,38 +143,48 @@ class Listener:
         sd.wait()
         return a.flatten()
 
+    def _do_transcribe(self, audio, model, is_wake=False):
+        """Interne Transkription ohne Lock (muss bereits gehalten werden)."""
+        if is_wake:
+            segments, _ = model.transcribe(
+                audio,
+                language="de",
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters=dict(
+                    min_silence_duration_ms=300,
+                    speech_pad_ms=500,
+                ),
+            )
+        else:
+            segments, _ = model.transcribe(
+                audio,
+                language="de",
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=400),
+                initial_prompt="Sprachbefehle auf Deutsch.",
+            )
+        return "".join([seg.text for seg in segments]).strip()
+
     def _transcribe(self, audio, model, is_wake=False):
         """Transkription – nur Deutsch. Thread-safe durch Lock.
-
-        is_wake=True:
-          - Kein initial_prompt (vermeidet Germanisierung von "Jarvis")
-          - speech_pad_ms erhoehen damit kurze Woerter nicht abgeschnitten werden
+        Faellt bei CUDA/cuBLAS-Fehlern automatisch auf CPU zurueck.
         """
         with _whisper_lock:
-            if is_wake:
-                # Fuer Wake-Word: kein Deutsch-Prompt, damit "Jarvis" (englisch)
-                # nicht als deutsches Wort transkribiert wird.
-                # speech_pad_ms=500 verhindert Abschneiden kurzer Einzel-Woerter.
-                segments, _ = model.transcribe(
-                    audio,
-                    language="de",
-                    beam_size=5,
-                    vad_filter=True,
-                    vad_parameters=dict(
-                        min_silence_duration_ms=300,
-                        speech_pad_ms=500,
-                    ),
-                )
-            else:
-                segments, _ = model.transcribe(
-                    audio,
-                    language="de",
-                    beam_size=5,
-                    vad_filter=True,
-                    vad_parameters=dict(min_silence_duration_ms=400),
-                    initial_prompt="Sprachbefehle auf Deutsch.",
-                )
-            return "".join([segment.text for segment in segments]).strip()
+            try:
+                return self._do_transcribe(audio, model, is_wake)
+            except RuntimeError as e:
+                err_lower = str(e).lower()
+                if any(k in err_lower for k in ("cublas", "cuda", "cufft", "cudnn")):
+                    print(f"  [STT] CUDA-Fehler bei Transkription: {e}")
+                    print("  [STT] Lade Modelle auf CPU neu (einmalig)...")
+                    cpu_model = WhisperModel(
+                        WHISPER_MODEL_WAKE, device="cpu", compute_type="int8")
+                    self.wake_model = cpu_model
+                    self.cmd_model  = cpu_model
+                    return self._do_transcribe(audio, cpu_model, is_wake)
+                raise
 
     def listen_for_wake_word(self):
         """Lauscht auf Wake-Word 'Jarvis' und Varianten."""
