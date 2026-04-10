@@ -1,3 +1,4 @@
 # Ignoriere alle ONNX-Modelle
 *.onnx
 *.exe
+*.pyc
