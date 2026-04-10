@@ -102,22 +102,6 @@ class JarvisOrb(tk.Canvas):
 
     # ── private ─────────────────────────────────────────────
 
-    @staticmethod
-    def _blend(color: str, alpha: float, bg: str = "#090b12") -> str:
-        """Simuliert Alpha durch Mischen mit dem Hintergrund (tkinter kennt kein RGBA)."""
-        try:
-            def parse(h):
-                h = h.lstrip("#")
-                return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-            r1, g1, b1 = parse(color)
-            r2, g2, b2 = parse(bg)
-            r = int(r1 * alpha + r2 * (1 - alpha))
-            g = int(g1 * alpha + g2 * (1 - alpha))
-            b = int(b1 * alpha + b2 * (1 - alpha))
-            return f"#{r:02x}{g:02x}{b:02x}"
-        except Exception:
-            return color
-
     def _spawn_ring(self):
         self._rings.append({"r": self.r * 0.55, "a": 1.0})
 
@@ -146,22 +130,27 @@ class JarvisOrb(tk.Canvas):
         }[s]
         c_main, c_mid, c_dark = colors
 
-        # ── Äußere Pulsringe (kein RGBA – Farbe wird mit Hintergrund gemischt) ──
+        # ── Äußere Pulsringe (Listening-Spawn) ──
         for ring in list(self._rings):
             ring["r"] += 1.4
             ring["a"] -= 0.025
             if ring["a"] <= 0:
                 self._rings.remove(ring)
                 continue
+            a_int = max(0, min(255, int(ring["a"] * 120)))
+            hex_a = f"{a_int:02x}"
             rr = ring["r"]
-            ring_color = self._blend(c_main, ring["a"] * 0.55)
-            self.create_oval(
-                cx - rr, cy - rr, cx + rr, cy + rr,
-                outline=ring_color, width=1
-            )
+            try:
+                self.create_oval(
+                    cx - rr, cy - rr, cx + rr, cy + rr,
+                    outline=c_main + hex_a,
+                    width=1
+                )
+            except Exception:
+                pass
 
         # ── Äußerer Rotationsring (3 Segmente) ──
-        for i, seg_len in enumerate([100, 60, 30]):
+        for i, (seg_len, gap) in enumerate([(100, 20), (60, 100), (30, 210)]):
             start = self._angle + i * 120
             self.create_arc(
                 cx - r, cy - r, cx + r, cy + r,
@@ -213,13 +202,12 @@ class JarvisOrb(tk.Canvas):
         else:
             self._bars = [0.0] * len(self._bars)
 
-        # ── Zweiter Innenring (gestrichelt via create_arc statt create_oval) ──
+        # ── Zweiter Innenring ──
         ri2 = r * 0.62
-        self.create_arc(
+        self.create_oval(
             cx - ri2, cy - ri2, cx + ri2, cy + ri2,
-            start=0, extent=359,
-            outline=c_mid, width=1,
-            style="arc", dash=(4, 8)
+            outline=c_mid, width=1, dash=(4, 8),
+            style="arc",  # Lücken via arc mit extent
         )
 
         # ── Zustandstext ──
